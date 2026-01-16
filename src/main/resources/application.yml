@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: "backend-for-frontend"
+  config:
+    import: "configserver:http://localhost:8071/"
+  security:
+    oauth2:
+      client:
+        registration:
+          freelance-authserver:
+            client-id: gateway-server-client
+            client-secret: gatewayServerSecret
+            scope: AUTHENTICATION_SERVER
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  cache:
+    type: redis
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    gateway:
+      access: unrestricted
+  info:
+    env:
+      enabled: true
+
+info:
+  app:
+    name: "${spring.application.name}"
+    description: "BFF Server Application"
+    version: "1.0.0"
