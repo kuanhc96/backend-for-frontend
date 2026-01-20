@@ -4,38 +4,31 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpCookie;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.server.reactive.ServerHttpRequest;
-import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
-import org.springframework.util.ObjectUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.web.server.WebSession;
 
 import com.example.backend_for_frontend.client.AuthServerClient;
-import com.example.backend_for_frontend.component.AuthorizationStateDecoder;
 import com.example.backend_for_frontend.dto.AuthorizationState;
 import com.example.backend_for_frontend.dto.SessionResponse;
 import com.example.backend_for_frontend.dto.TokenResponse;
@@ -65,6 +58,7 @@ public class OAuthController {
 	private final JwtDecoder jwtDecoder;
 	private final RedisClient redisClient;
 	private final RestTemplate authServerRedirectClient;
+	private final AuthServerClient authServerClient;
 
     @GetMapping("/status")
     public ResponseEntity<SessionResponse> getOpenIdSession(HttpServletRequest request, HttpServletResponse response) {
@@ -74,15 +68,15 @@ public class OAuthController {
 
 		// check if the user has a valid access token associated with the session
 		// get the current session's JSESSIONID cookie
-		Cookie jsessionCookie = Arrays.stream(request.getCookies()).filter(c -> "JSESSIONID".equals(c.getName())).findFirst().orElse(null);
-		Cookie rememberMeCookie = Arrays.stream(request.getCookies()).filter(c -> "RMC".equals(c.getName())).findFirst().orElse(null);
-		String jSessionId = null;
-		String accessToken = null;
-		String idToken = null;
-		if (rememberMeCookie == null && jsessionCookie == null) {
+		if (ObjectUtils.isEmpty(request.getCookies())) {
 			SessionResponse emptySession = SessionResponse.builder().email("").role("").userGUID("").build();
 			return ResponseEntity.ok().headers(responseHeaders).body(emptySession);
-		} else if (rememberMeCookie != null) {
+		}
+		Cookie rememberMeCookie = Arrays.stream(request.getCookies()).filter(c -> "RMC".equals(c.getName())).findFirst().orElse(null);
+		String jSessionId = request.getSession(true).getId();
+		String accessToken = null;
+		String idToken = null;
+		if (rememberMeCookie != null) {
 			// access token expired
 			// user previously selected the "remember me" option
 
@@ -102,8 +96,8 @@ public class OAuthController {
 				accessToken = tokenResponse.access_token();
 				idToken = tokenResponse.id_token();
 				String newRefreshToken = tokenResponse.refresh_token();
-				redisClient.set(generateAccessTokenKey(accessToken), accessToken, SetParams.setParams().nx().ex(rememberMeExpirationHours * 3600L));
-				redisClient.set(generateOpenIdTokenKey(accessToken), idToken, SetParams.setParams().nx().ex(rememberMeExpirationHours * 3600L));
+				redisClient.set(generateAccessTokenKey(jSessionId), accessToken, SetParams.setParams().nx().ex(rememberMeExpirationHours * 3600L));
+				redisClient.set(generateOpenIdTokenKey(jSessionId), idToken, SetParams.setParams().nx().ex(rememberMeExpirationHours * 3600L));
 				Long rememberMeExpirationSeconds = rememberMeExpirationHours * 3600L;
 				String newRememberMeCookieId = UUID.randomUUID().toString();
 				redisClient.set(generateRefreshTokenKey(newRememberMeCookieId), newRefreshToken, SetParams.setParams().nx().ex(rememberMeExpirationSeconds));
@@ -120,7 +114,6 @@ public class OAuthController {
 
 			}
 		} else {
-			jSessionId = jsessionCookie.getValue();
 			// get the accessToken and idToken associated with the JSESSIONID from redis
 			accessToken = redisClient.get(generateAccessTokenKey(jSessionId));
 			if (StringUtils.isBlank(accessToken)) {
@@ -145,7 +138,6 @@ public class OAuthController {
 	public ResponseEntity<?> callback(
 			HttpServletRequest request,
 			HttpServletResponse response,
-			WebSession session,
             @RequestParam(required = false) String code,
 			@RequestParam(required = false) String state,
             @RequestParam(required = false) String error) throws IOException {
@@ -205,7 +197,11 @@ public class OAuthController {
 	}
 
 	private void verifyState(String state) {
-		AuthorizationStateDecoder.verifySignature(state);
+		Boolean isValidStateResponse = authServerClient.verifyState(state);
+
+		if (isValidStateResponse == null || !isValidStateResponse) {
+			throw new IllegalArgumentException("Invalid state parameter");
+		}
 	}
 
 	private AuthorizationState parseState(String state) throws IOException {
