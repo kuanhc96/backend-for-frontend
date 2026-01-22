@@ -184,6 +184,40 @@ public class OAuthController {
 		}
 	}
 
+	@PostMapping("/logout")
+	public ResponseEntity<Void> logout(HttpServletRequest request, HttpServletResponse response) {
+		HttpHeaders responseHeaders = new HttpHeaders();
+		responseHeaders.add("Access-Control-Allow-Origin", clientLocation);
+		responseHeaders.add("Access-Control-Allow-Credentials", "true");
+
+		// check if the user has a valid access token associated with the session
+		// get the current session's JSESSIONID cookie
+		if (ObjectUtils.isEmpty(request.getCookies())) {
+			return ResponseEntity.ok().headers(responseHeaders).build();
+		}
+		Cookie rememberMeCookie = Arrays.stream(request.getCookies()).filter(c -> "RMC".equals(c.getName())).findFirst().orElse(null);
+		String jSessionId = request.getSession(true).getId();
+		if (rememberMeCookie != null) {
+			// get rememberMeCookie
+			String rememberMeCookieId = rememberMeCookie.getValue();
+
+			// delete refresh token from redis
+			redisClient.del(generateRefreshTokenKey(rememberMeCookieId));
+
+			Cookie deleteRememberMeCookie = new Cookie("RMC", null);
+			deleteRememberMeCookie.setMaxAge(0);
+			deleteRememberMeCookie.setDomain(null);
+			deleteRememberMeCookie.setPath("/");
+			deleteRememberMeCookie.setSecure(true);
+			deleteRememberMeCookie.setHttpOnly(true);
+			response.addCookie(deleteRememberMeCookie);
+		}
+		redisClient.del(generateAccessTokenKey(jSessionId));
+		redisClient.del(generateOpenIdTokenKey(jSessionId));
+		request.changeSessionId();
+		return ResponseEntity.ok().headers(responseHeaders).build();
+	}
+
 	private String generateAccessTokenKey(String id) {
 		return "access_token#" + id;
 	}
