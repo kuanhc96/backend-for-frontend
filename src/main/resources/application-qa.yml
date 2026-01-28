@@ -1,0 +1,11 @@
+spring:
+  application:
+    name: "backend-for-frontend"
+  config:
+    import: "configserver:http://configserver:8071/"
+
+info:
+  app:
+    name: "${spring.application.name}"
+    description: "BFF Server Application"
+    version: "1.0.0"
