@@ -73,7 +73,7 @@ public class OAuthController {
 			return ResponseEntity.ok().headers(responseHeaders).body(emptySession);
 		}
 		Cookie rememberMeCookie = Arrays.stream(request.getCookies()).filter(c -> "RMC".equals(c.getName())).findFirst().orElse(null);
-		String jSessionId = request.getSession(true).getId();
+		String jSessionId = request.getRequestedSessionId() == null? request.getSession(true).getId() : request.getRequestedSessionId();
 		String accessToken = null;
 		String idToken = null;
 		if (rememberMeCookie != null) {
