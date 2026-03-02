@@ -47,7 +47,7 @@ public class OAuthController {
 	@Value("${client.location}")
 	private String clientLocation;
 
-	@Value("${authserver.location:http://localhost:9000}")
+	@Value("${authserver.location.internal}")
 	private String authServerLocation;
 
 	@Value("${rememberme.expiration-hours:8}")
